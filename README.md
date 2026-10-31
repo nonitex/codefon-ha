@@ -16,9 +16,11 @@ máskor.
 
 - **Kaputelefon panel** (oldalsáv): hallgatás és beszéd a hívóval, felvétel,
   letevés, ajtónyitás, a HA saját felületén, mobilról és a Nabu Casán át is.
-  A mikrofonhoz HTTPS kell: ha a HA-t `http://` címen nyitod meg, a panel a
-  HTTPS címére visz. A `/kaputelefon?hivas=1` cím az indítással fel is veszi
-  a csöngető hívást.
+  Megnyitáskor magától kapcsolódik; a hang az első koppintással indul
+  (Felvétel, beszéd vagy „Hang bekapcsolása”), mert a böngésző csak így ad
+  hangot és mikrofont. A hanghoz HTTPS kell: `http://` címen a gombok
+  működnek, és a panel a HTTPS címre mutat. A `/kaputelefon?hivas=1` cím
+  egy koppintással fel is veszi a csöngető hívást.
 
 Készül még: az értesítés csöngetéskor automatizálás nélkül.
 

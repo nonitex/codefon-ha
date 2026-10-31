@@ -72,9 +72,9 @@ a{color:var(--primary-color)}
 
 const HTML = `
 <div class="card"><h1>Kaputelefon</h1>
-<div class="st" id="st">Indításra vár.</div>
+<div class="st" id="st">Kapcsolódás…</div>
 <div id="secure"></div>
-<button id="go">Indítás</button>
+<button id="go">Hang bekapcsolása</button>
 <div class="call" id="call"></div>
 <div><button id="up" disabled>Felvétel</button><button id="down" disabled>Letevés</button><button id="door" disabled>Ajtónyitás</button></div>
 <div class="msg" id="msg"></div>
@@ -104,15 +104,21 @@ class CodefonPanel extends HTMLElement {
     this.hello = null; this.state = {state: 'idle'}; this.cid = 0; this.seq = 0; this.lastBeep = 0;
     this.tries = 0; this.listening = false;
     this.autoUp = /[?&]hivas=1/.test(location.search);
-    if (this.autoUp) this.$('go').textContent = 'Felvétel és indítás';
+    if (this.autoUp) this.$('go').textContent = 'Felvétel és hang';
     this._load();
-    this.$('go').onclick = () => this._start();
-    this.$('up').onclick = () => this._cmd('up');
+    // The connection needs no tap; the browser gives sound and the
+    // microphone only after one, so the first of these taps starts them.
+    this.$('go').onclick = async () => { if (await this._audio() && this.autoUp && this.ring) { this.autoUp = false; this._cmd('up'); } };
+    this.$('up').onclick = async () => { await this._audio(); this._cmd('up'); };
     this.$('down').onclick = () => this._cmd('down');
-    this.$('door').onclick = () => { if (confirm('Kinyitod a kaput?')) this._cmd('door'); };
+    this.$('door').onclick = () => this._cmd('door');
     const P = this.$('ptt');
-    P.addEventListener('pointerdown', e => { e.preventDefault(); P.setPointerCapture(e.pointerId); this._ptt(true); });
-    ['pointerup', 'pointercancel'].forEach(t => P.addEventListener(t, () => this._ptt(false)));
+    P.addEventListener('pointerdown', async e => {
+      e.preventDefault(); P.setPointerCapture(e.pointerId); this.held = true;
+      if (!this.node && !(await this._audio())) return;
+      if (this.held) this._ptt(true);
+    });
+    ['pointerup', 'pointercancel'].forEach(t => P.addEventListener(t, () => { this.held = false; this._ptt(false); }));
     P.addEventListener('contextmenu', e => e.preventDefault());
     ['rv', 'tv'].forEach(i => {
       try { const v = localStorage.getItem('codefon.' + i); if (v !== null) this.$(i).value = v; } catch (e) {}
@@ -136,8 +142,10 @@ class CodefonPanel extends HTMLElement {
       if (!r.devices.length) { this._status('Nincs beállított Codefon naplózó.', true); this.$('go').disabled = true; return; }
       this.device = r.devices[0];
     } catch (e) { this._status('A Codefon integráció nem válaszol: ' + e.message, true); return; }
+    this._connect();
     if (!window.isSecureContext) {
-      this._status('Nem biztonságos (http) cím: a böngésző nem ad mikrofont.', true);
+      this.insecure = true;
+      this.$('go').disabled = true;
       if (this.secureUrl) {
         const u = this.secureUrl.replace(/\/$/, '') + '/kaputelefon' + location.search;
         this.$('secure').innerHTML = `<p><a href="${u}">Megnyitás a HTTPS címen</a></p>`;
@@ -147,9 +155,25 @@ class CodefonPanel extends HTMLElement {
     }
   }
 
+  _okText() {
+    return this.insecure ? 'Kapcsolat megvan. Hang csak HTTPS címen van, a gombok így is működnek.'
+      : this.node ? 'Kapcsolat megvan.' : 'Kapcsolat megvan. A hang az első koppintással indul.';
+  }
+
   _status(t, bad) { const s = this.$('st'); s.textContent = t; s.classList.toggle('bad', !!bad); }
 
-  async _start() {
+  // Starts sound and the microphone (needs a tap); true once they run.
+  async _audio() {
+    if (this.node) return true;
+    if (this.starting) return this.starting;
+    this.starting = this._startAudio();
+    const ok = await this.starting;
+    this.starting = null;
+    return ok;
+  }
+
+  async _startAudio() {
+    if (this.insecure) { this.$('msg').textContent = 'Hang csak HTTPS címen van (lásd fent).'; return false; }
     this.$('go').disabled = true;
     try {
       this.ctx = new AudioContext({latencyHint: 'interactive'});
@@ -172,12 +196,15 @@ class CodefonPanel extends HTMLElement {
       };
       this._vol();
       await c.resume();
+      this._status(this._okText());
       try { this.lock = await navigator.wakeLock.request('screen'); } catch (e) {}
-      this.$('go').textContent = 'Fut';
-      this._connect();
+      this.$('go').hidden = true;
+      return true;
     } catch (e) {
-      this._status('Nem indult: ' + e.message + (window.isSecureContext ? '' : ' (a mikrofonhoz HTTPS kell)'), true);
+      this.node = null;
+      this.$('msg').textContent = 'A hang nem indult: ' + e.message;
       this.$('go').disabled = false;
+      return false;
     }
   }
 
@@ -196,7 +223,7 @@ class CodefonPanel extends HTMLElement {
     const ws = new WebSocket((location.protocol === 'https:' ? 'wss://' : 'ws://') + location.host + path);
     ws.binaryType = 'arraybuffer';
     this.ws = ws;
-    ws.onopen = () => { this.tries = 0; this._status('Kapcsolat megvan.'); };
+    ws.onopen = () => { this.tries = 0; this._status(this._okText()); };
     ws.onclose = () => { if (this.ws === ws) this._drop(); };
     ws.onmessage = e => {
       if (typeof e.data !== 'string') {
@@ -206,7 +233,7 @@ class CodefonPanel extends HTMLElement {
       const j = JSON.parse(e.data);
       if (j.t === 'hello') { this.hello = j; this._show(); }
       else if (j.t === 'state') { this.state = j; this._show(); }
-      else if (j.t === 'connection') { if (!j.connected) this._status('A naplózó nem érhető el, a Home Assistant újrakapcsolódik…', true); else this._status('Kapcsolat megvan.'); }
+      else if (j.t === 'connection') { if (!j.connected) this._status('A naplózó nem érhető el, a Home Assistant újrakapcsolódik…', true); else this._status(this._okText()); }
       else if (j.t === 'audio') { if (!j.talk && this.down) { this._ptt(false); this.$('msg').textContent = 'Az adás véget ért.'; } if (!j.listen) this.listening = false; }
       else if (j.t === 'reply') this._reply(j);
       else if (j.t === 'event') this._event(j);
@@ -238,13 +265,14 @@ class CodefonPanel extends HTMLElement {
     this.may = this.talk;
     this.$('up').disabled = !this.ring;
     this.$('down').disabled = this.$('door').disabled = this.$('ptt').disabled = !this.may;
+    if (this.ring && !this.node && !this.insecure) this.$('go').textContent = this.autoUp ? 'Felvétel és hang' : 'Hang bekapcsolása (belehallgatás)';
     if (!this.may && this.down) this._ptt(false);
     if ((this.ring || this.talk) && !this.listening && this.ws && this.ws.readyState === 1) {
       this.listening = true;
       this._cmd('listen', {on: true}, true);
     }
     if (!(this.ring || this.talk)) this.listening = false;
-    if (this.ring && this.autoUp) { this.autoUp = false; this._cmd('up'); }
+    if (this.ring && this.autoUp && this.node) { this.autoUp = false; this._cmd('up'); }
     if (this.ring && Date.now() - this.lastBeep > 2500) {
       this.lastBeep = Date.now();
       if (navigator.vibrate) navigator.vibrate([300, 150, 300]);

@@ -53,6 +53,7 @@ class Relay:
         self.browsers: set[Browser] = set()
         self.talker: Browser | None = None
         self._listen_flat: int | None = None
+        self._resync: asyncio.Future | None = None
         self._unsubs = [client.add_listener(self._on_message), client.add_audio_listener(self._on_audio)]
 
     def close(self) -> None:
@@ -70,10 +71,32 @@ class Relay:
             if not msg.get("talk"):
                 self.talker = None
         if kind == "connection":
+            # A new socket to the device starts with nothing on: listening is
+            # asked for again, and a talk that was going on has ended.
+            if self.talker is not None:
+                self.talker = None
+                for b in self.browsers:
+                    b.put(json.dumps({"t": "audio", "listen": b.listening, "talk": False}))
+            self._listen_flat = None
+            if msg.get("connected") and any(b.listening for b in self.browsers):
+                self._resync = asyncio.ensure_future(self._listen_again())
             msg = {"t": "connection", "connected": msg.get("connected", False)}
         text = json.dumps(msg)
         for b in self.browsers:
             b.put(text)
+
+    async def _listen_again(self) -> None:
+        flat = self.client.state.get("flat")
+        if not flat:
+            return
+        try:
+            await self.client.async_command("listen", flat=flat, on=True)
+            self._listen_flat = flat
+        except CodefonError as err:
+            _LOGGER.debug("Codefon: listening not resumed: %s", err)
+            for b in self.browsers:
+                b.listening = False
+                b.put(json.dumps({"t": "audio", "listen": False, "talk": False}))
 
     def _on_audio(self, frame: bytes) -> None:
         if not frame or frame[0] != FRAME_LINE:
