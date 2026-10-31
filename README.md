@@ -14,8 +14,13 @@ csöngetéskor, letenni és ajtót nyitni csak felvett hívásban lehet, és csa
 engedélyezett lakásokban. A HA vagy a hálózat hibája így sem nyithat ajtót
 máskor.
 
-Készül még: a beszéd a hívóval a HA saját felületén (mobilról is), és az
-értesítés csöngetéskor automatizálás nélkül.
+- **Kaputelefon panel** (oldalsáv): hallgatás és beszéd a hívóval, felvétel,
+  letevés, ajtónyitás, a HA saját felületén, mobilról és a Nabu Casán át is.
+  A mikrofonhoz HTTPS kell: ha a HA-t `http://` címen nyitod meg, a panel a
+  HTTPS címére visz. A `/kaputelefon?hivas=1` cím az indítással fel is veszi
+  a csöngető hívást.
+
+Készül még: az értesítés csöngetéskor automatizálás nélkül.
 
 ## Telepítés
 

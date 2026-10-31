@@ -37,7 +37,7 @@ BUTTONS = (
 async def async_setup_entry(
     hass: HomeAssistant, entry: CodefonConfigEntry, async_add_entities: AddConfigEntryEntitiesCallback
 ) -> None:
-    client = entry.runtime_data
+    client = entry.runtime_data.client
     caps = (client.hello or {}).get("caps", {})
     async_add_entities(
         CodefonButton(client, entry.data[CONF_DEVICE_ID], d) for d in BUTTONS if caps.get(d.cap)

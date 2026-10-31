@@ -16,7 +16,7 @@ from .entity import CodefonEntity
 async def async_setup_entry(
     hass: HomeAssistant, entry: CodefonConfigEntry, async_add_entities: AddConfigEntryEntitiesCallback
 ) -> None:
-    async_add_entities([CodefonStateSensor(entry.runtime_data, entry.data[CONF_DEVICE_ID])])
+    async_add_entities([CodefonStateSensor(entry.runtime_data.client, entry.data[CONF_DEVICE_ID])])
 
 
 class CodefonStateSensor(CodefonEntity, SensorEntity):

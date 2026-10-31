@@ -3,21 +3,30 @@
 from __future__ import annotations
 
 import logging
+from dataclasses import dataclass
 
-from homeassistant.config_entries import ConfigEntry
+from homeassistant.config_entries import ConfigEntry, ConfigEntryState
 from homeassistant.const import CONF_HOST, Platform
 from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import ConfigEntryAuthFailed, ConfigEntryNotReady
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
 
 from .api import CodefonAuthError, CodefonClient, CodefonError, async_unpair
-from .const import CONF_TOKEN, CONF_WS_PORT
+from .const import CONF_TOKEN, CONF_WS_PORT, DOMAIN
+from .panel import async_remove_panel, async_setup_panel
+from .relay import Relay
 
 _LOGGER = logging.getLogger(__name__)
 
 PLATFORMS = [Platform.BUTTON, Platform.EVENT, Platform.SENSOR]
 
-type CodefonConfigEntry = ConfigEntry[CodefonClient]
+@dataclass
+class CodefonData:
+    client: CodefonClient
+    relay: Relay
+
+
+type CodefonConfigEntry = ConfigEntry[CodefonData]
 
 
 async def async_setup_entry(hass: HomeAssistant, entry: CodefonConfigEntry) -> bool:
@@ -42,15 +51,24 @@ async def async_setup_entry(hass: HomeAssistant, entry: CodefonConfigEntry) -> b
             entry.async_start_reauth(hass)
 
     entry.async_on_unload(client.add_listener(on_message))
-    entry.runtime_data = client
+    relay = Relay(client)
+    entry.async_on_unload(relay.close)
+    entry.runtime_data = CodefonData(client, relay)
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
+    await async_setup_panel(hass)
     return True
 
 
 async def async_unload_entry(hass: HomeAssistant, entry: CodefonConfigEntry) -> bool:
     unloaded = await hass.config_entries.async_unload_platforms(entry, PLATFORMS)
     if unloaded:
-        await entry.runtime_data.async_stop()
+        await entry.runtime_data.client.async_stop()
+        others = [
+            e for e in hass.config_entries.async_entries(DOMAIN)
+            if e.entry_id != entry.entry_id and e.state is ConfigEntryState.LOADED
+        ]
+        if not others:
+            async_remove_panel(hass)
     return unloaded
 
 
