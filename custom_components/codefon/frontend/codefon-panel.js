@@ -60,7 +60,8 @@ h1{font-size:1.4rem;margin:0 0 8px}
 @keyframes b{50%{opacity:.4}}
 button{font:inherit;border:0;border-radius:10px;padding:12px 16px;margin:4px 4px 4px 0;background:var(--primary-color,#03a9f4);color:var(--text-primary-color,#fff);cursor:pointer}
 button:disabled{opacity:.35;cursor:default}
-#go{width:100%;font-size:1.2rem}
+#go,#up{width:100%;font-size:1.3rem;padding:18px 16px}
+#up{background:var(--success-color,#2e7d32)}
 #ptt{width:100%;height:9rem;font-size:1.5rem;margin-top:8px;touch-action:none;user-select:none;-webkit-user-select:none}
 #ptt.on{background:var(--error-color,#c62828)}
 #door{background:var(--warning-color,#ef6c00)}
@@ -74,9 +75,10 @@ const HTML = `
 <div class="card"><h1>Kaputelefon</h1>
 <div class="st" id="st">Kapcsolódás…</div>
 <div id="secure"></div>
-<button id="go">Hang bekapcsolása</button>
 <div class="call" id="call"></div>
-<div><button id="up" disabled>Felvétel</button><button id="down" disabled>Letevés</button><button id="door" disabled>Ajtónyitás</button></div>
+<button id="up" hidden>Felvétel</button>
+<button id="go" hidden>Hang bekapcsolása</button>
+<div><button id="down" disabled>Letevés</button><button id="door" disabled>Ajtónyitás</button></div>
 <div class="msg" id="msg"></div>
 <button id="ptt" disabled>Nyomd és beszélj</button>
 </div>
@@ -102,14 +104,19 @@ class CodefonPanel extends HTMLElement {
     this.ws = null; this.ctx = null; this.node = null; this.txg = null;
     this.down = false; this.may = false; this.ring = false; this.talk = false;
     this.hello = null; this.state = {state: 'idle'}; this.cid = 0; this.seq = 0; this.lastBeep = 0;
-    this.tries = 0; this.listening = false;
-    this.autoUp = /[?&]hivas=1/.test(location.search);
-    if (this.autoUp) this.$('go').textContent = 'Felvétel és hang';
+    this.tries = 0; this.listening = false; this.upUntil = 0;
     this._load();
-    // The connection needs no tap; the browser gives sound and the
-    // microphone only after one, so the first of these taps starts them.
-    this.$('go').onclick = async () => { if (await this._audio() && this.autoUp && this.ring) { this.autoUp = false; this._cmd('up'); } };
+    // No sound before the call is picked up, and none after it: sound and
+    // the microphone start with the pick-up and stop when the call ends
+    // (the app keeps this panel alive in the background between calls).
+    // The browser gives them only after a tap; Felvétel is that tap.
     this.$('up').onclick = async () => { await this._audio(); this._cmd('up'); };
+    this.$('go').onclick = () => this._audio().then(() => this._show());
+    // Opened from the ring notification (?hivas=1): pick up at once if it
+    // still rings. The mark is consumed, so a later ring never picks up
+    // by itself; the app may reuse this panel, hence the location check.
+    this._hivas();
+    window.addEventListener('location-changed', () => this._hivas());
     this.$('down').onclick = () => this._cmd('down');
     this.$('door').onclick = () => this._cmd('door');
     const P = this.$('ptt');
@@ -127,11 +134,20 @@ class CodefonPanel extends HTMLElement {
     try { this.$('ns').checked = localStorage.getItem('codefon.ns') !== '0'; } catch (e) {}
     this.$('ns').onchange = () => { this._vol(); try { localStorage.setItem('codefon.ns', this.$('ns').checked ? '1' : '0'); } catch (e) {} };
     document.addEventListener('visibilitychange', async () => {
-      if (document.visibilityState !== 'visible' || !this.ctx) return;
+      if (document.visibilityState !== 'visible') return;
+      this._hivas();
+      if (!this.ws && this.device) { clearTimeout(this.retry); this._connect(); }
+      if (!this.ctx) return;
       try { this.lock = await navigator.wakeLock.request('screen'); } catch (e) {}
       if (this.ctx.state !== 'running') this.ctx.resume();
-      if (!this.ws) { clearTimeout(this.retry); this._connect(); }
     });
+  }
+
+  _hivas() {
+    if (!/[?&]hivas=1/.test(location.search)) return;
+    this.upUntil = Date.now() + 20000;
+    try { history.replaceState(history.state, '', location.pathname); } catch (e) {}
+    this._show();
   }
 
   async _load() {
@@ -145,9 +161,8 @@ class CodefonPanel extends HTMLElement {
     this._connect();
     if (!window.isSecureContext) {
       this.insecure = true;
-      this.$('go').disabled = true;
       if (this.secureUrl) {
-        const u = this.secureUrl.replace(/\/$/, '') + '/kaputelefon' + location.search;
+        const u = this.secureUrl.replace(/\/$/, '') + '/kaputelefon' + (this.upUntil > Date.now() ? '?hivas=1' : '');
         this.$('secure').innerHTML = `<p><a href="${u}">Megnyitás a HTTPS címen</a></p>`;
       } else {
         this.$('secure').innerHTML = '<p>A Home Assistantnak nincs HTTPS címe (Nabu Casa vagy saját domain).</p>';
@@ -157,7 +172,7 @@ class CodefonPanel extends HTMLElement {
 
   _okText() {
     return this.insecure ? 'Kapcsolat megvan. Hang csak HTTPS címen van, a gombok így is működnek.'
-      : this.node ? 'Kapcsolat megvan.' : 'Kapcsolat megvan. A hang az első koppintással indul.';
+      : 'Kapcsolat megvan.';
   }
 
   _status(t, bad) { const s = this.$('st'); s.textContent = t; s.classList.toggle('bad', !!bad); }
@@ -172,13 +187,24 @@ class CodefonPanel extends HTMLElement {
     return ok;
   }
 
-  async _startAudio() {
-    if (this.insecure) { this.$('msg').textContent = 'Hang csak HTTPS címen van (lásd fent).'; return false; }
-    this.$('go').disabled = true;
+  // Stops sound and the microphone (the call has ended).
+  _stopAudio() {
+    if (this.down) this._ptt(false);
+    if (this.mic) this.mic.getTracks().forEach(t => t.stop());
+    if (this.ctx) this.ctx.close().catch(() => {});
+    if (this.lock) { this.lock.release().catch(() => {}); this.lock = null; }
+    this.mic = this.ctx = this.node = this.txg = null;
+    this.$('mt').style.width = this.$('mr').style.width = '0%';
+  }
+
+  async _startAudio(quiet = false) {
+    if (this.insecure) { if (!quiet) this.$('msg').textContent = 'Hang csak HTTPS címen van (lásd fent).'; return false; }
+    this.$('go').disabled = this.$('up').disabled = true;
     try {
       this.ctx = new AudioContext({latencyHint: 'interactive'});
       await this.ctx.audioWorklet.addModule(URL.createObjectURL(new Blob([WORKLET], {type: 'text/javascript'})));
       const mic = await navigator.mediaDevices.getUserMedia({audio: {echoCancellation: true, noiseSuppression: true, autoGainControl: true}});
+      this.mic = mic;
       const c = this.ctx, src = c.createMediaStreamSource(mic);
       const hp = new BiquadFilterNode(c, {type: 'highpass', frequency: 300});
       const l1 = new BiquadFilterNode(c, {type: 'lowpass', frequency: 3300}), l2 = new BiquadFilterNode(c, {type: 'lowpass', frequency: 3300});
@@ -195,16 +221,18 @@ class CodefonPanel extends HTMLElement {
         else { this.$('mt').style.width = Math.min(100, d.mt * 100) + '%'; this.$('mr').style.width = Math.min(100, d.mr * 100) + '%'; }
       };
       this._vol();
-      await c.resume();
+      // Without a tap the browser may leave it suspended for good.
+      await Promise.race([c.resume(), new Promise(r => setTimeout(r, 1500))]);
+      if (c.state !== 'running') throw new Error('koppintás kell hozzá');
       this._status(this._okText());
       try { this.lock = await navigator.wakeLock.request('screen'); } catch (e) {}
-      this.$('go').hidden = true;
       return true;
     } catch (e) {
-      this.node = null;
-      this.$('msg').textContent = 'A hang nem indult: ' + e.message;
-      this.$('go').disabled = false;
+      this._stopAudio();
+      if (!quiet) this.$('msg').textContent = 'A hang nem indult: ' + e.message;
       return false;
+    } finally {
+      this.$('go').disabled = this.$('up').disabled = false;
     }
   }
 
@@ -263,34 +291,34 @@ class CodefonPanel extends HTMLElement {
       : s.state === 'ringing' || s.state === 'talking' ? `Hívás más lakásra (${f}.)` : s.state === 'line_down' ? 'Nincs vonal' : 'Nincs hívás';
     C.classList.toggle('ring', this.ring);
     this.may = this.talk;
-    this.$('up').disabled = !this.ring;
+    this.$('up').hidden = !this.ring;
+    this.$('go').hidden = !(this.talk && !this.node && !this.insecure);
     this.$('down').disabled = this.$('door').disabled = this.$('ptt').disabled = !this.may;
-    if (this.ring && !this.node && !this.insecure) this.$('go').textContent = this.autoUp ? 'Felvétel és hang' : 'Hang bekapcsolása (belehallgatás)';
     if (!this.may && this.down) this._ptt(false);
-    if ((this.ring || this.talk) && !this.listening && this.ws && this.ws.readyState === 1) {
+    // The line is heard only in our own talk, never while it rings.
+    if (this.talk && !this.listening && this.ws && this.ws.readyState === 1) {
       this.listening = true;
       this._cmd('listen', {on: true}, true);
     }
-    if (!(this.ring || this.talk)) this.listening = false;
-    if (this.ring && this.autoUp && this.node) { this.autoUp = false; this._cmd('up'); }
+    if (!this.talk) this.listening = false;
+    if (!(this.ring || this.talk) && (this.ctx || this.mic)) this._stopAudio();
+    if (this.ring && this.upUntil > Date.now() && !this.autoTrying) {
+      this.upUntil = 0; this.autoTrying = true;
+      this._audio().then(ok => {
+        this.autoTrying = false;
+        if (ok && this.ring) this._cmd('up');
+        else if (!ok) this.$('msg').textContent = 'Koppints a Felvétel gombra.';
+      });
+    }
     if (this.ring && Date.now() - this.lastBeep > 2500) {
       this.lastBeep = Date.now();
       if (navigator.vibrate) navigator.vibrate([300, 150, 300]);
-      this._beep();
     }
   }
 
   _event(j) {
     const t = {door: 'Ajtónyitás.', talk_ended: 'A hívás véget ért.', unanswered: 'Nem vették fel.', canceled: 'A hívó bontott.'}[j.event_type];
     if (t && this._flatOk(j.flat)) this.$('msg').textContent = t;
-  }
-
-  _beep() {
-    const c = this.ctx; if (!c) return;
-    [0, 0.35].forEach(t => {
-      const o = new OscillatorNode(c, {frequency: 880}), g = new GainNode(c, {gain: 0.3});
-      o.connect(g).connect(c.destination); o.start(c.currentTime + t); o.stop(c.currentTime + t + 0.2);
-    });
   }
 
   _cmd(cmd, extra = {}, quiet = false) {
