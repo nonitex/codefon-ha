@@ -1,0 +1,107 @@
+{
+  "config": {
+    "flow_title": "{name}",
+    "step": {
+      "user": {
+        "title": "Codefon logger",
+        "description": "The logger's address on the network (IP address or codefon-….local).",
+        "data": {
+          "host": "Host"
+        }
+      },
+      "pair": {
+        "title": "Pair with {name}",
+        "description": "Enter the logger's password (also the password of its own WiFi access point). Home Assistant keeps only the pairing, not the password.",
+        "data": {
+          "password": "Logger password"
+        }
+      },
+      "reauth_confirm": {
+        "title": "Pair {name} again",
+        "description": "The logger no longer accepts this Home Assistant (its pairing was removed there). Enter its password again.",
+        "data": {
+          "password": "Logger password"
+        }
+      }
+    },
+    "error": {
+      "cannot_connect": "The logger cannot be reached at this address.",
+      "invalid_auth": "Wrong password.",
+      "too_many_attempts": "Too many attempts; wait a minute."
+    },
+    "abort": {
+      "already_configured": "This logger is already set up.",
+      "cannot_connect": "The logger cannot be reached.",
+      "unsupported": "The logger's firmware speaks another protocol version.",
+      "reauth_successful": "Paired again."
+    }
+  },
+  "entity": {
+    "sensor": {
+      "state": {
+        "name": "State",
+        "state": {
+          "idle": "Idle",
+          "ringing": "Ringing",
+          "talking": "Talking",
+          "line_down": "No line"
+        },
+        "state_attributes": {
+          "flat": {
+            "name": "Flat"
+          },
+          "since": {
+            "name": "Since"
+          },
+          "name": {
+            "name": "Name"
+          }
+        }
+      }
+    },
+    "event": {
+      "event": {
+        "name": "Event",
+        "state_attributes": {
+          "event_type": {
+            "state": {
+              "ring": "Ring",
+              "answered": "Answered",
+              "canceled": "Canceled",
+              "unanswered": "Unanswered",
+              "talk_ended": "Talk ended",
+              "no_handset": "No handset",
+              "entry": "Entry",
+              "entry_denied": "Entry denied",
+              "door": "Door",
+              "door_hung_up": "Door hung up",
+              "audio": "Audio",
+              "code_entry": "Code entry",
+              "code_wrong": "Code wrong",
+              "card_entry": "Card entry",
+              "card_unknown": "Card unknown",
+              "service_code": "Service code",
+              "eeprom_write": "Eeprom write",
+              "supply_lost": "Supply lost",
+              "supply_back": "Supply back",
+              "line_fault": "Line fault",
+              "logger_restart": "Logger restart",
+              "logger_ring": "Logger ring"
+            }
+          }
+        }
+      }
+    },
+    "button": {
+      "pick_up": {
+        "name": "Pick up"
+      },
+      "hang_up": {
+        "name": "Hang up"
+      },
+      "open_door": {
+        "name": "Open door"
+      }
+    }
+  }
+}

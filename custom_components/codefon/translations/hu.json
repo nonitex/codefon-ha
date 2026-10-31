@@ -1,0 +1,107 @@
+{
+  "config": {
+    "flow_title": "{name}",
+    "step": {
+      "user": {
+        "title": "Codefon naplózó",
+        "description": "A naplózó címe a hálózaton (IP-cím vagy codefon-….local).",
+        "data": {
+          "host": "Cím"
+        }
+      },
+      "pair": {
+        "title": "Párosítás: {name}",
+        "description": "Add meg a naplózó jelszavát (ez a saját WiFi-hozzáférési pontjának jelszava is). A Home Assistant csak a párosítást őrzi meg, a jelszót nem.",
+        "data": {
+          "password": "A naplózó jelszava"
+        }
+      },
+      "reauth_confirm": {
+        "title": "Újra kell párosítani: {name}",
+        "description": "A naplózó már nem fogadja el ezt a Home Assistantot (a párosítást törölték rajta). Add meg újra a jelszavát.",
+        "data": {
+          "password": "A naplózó jelszava"
+        }
+      }
+    },
+    "error": {
+      "cannot_connect": "A naplózó nem érhető el ezen a címen.",
+      "invalid_auth": "Rossz jelszó.",
+      "too_many_attempts": "Túl sok próbálkozás; várj egy percet."
+    },
+    "abort": {
+      "already_configured": "Ez a naplózó már be van állítva.",
+      "cannot_connect": "A naplózó nem érhető el.",
+      "unsupported": "A naplózó firmware-e ezzel az integrációval nem beszél (régi vagy új protokoll).",
+      "reauth_successful": "Újra párosítva."
+    }
+  },
+  "entity": {
+    "sensor": {
+      "state": {
+        "name": "Állapot",
+        "state": {
+          "idle": "Nyugalom",
+          "ringing": "Csönget",
+          "talking": "Beszélgetés",
+          "line_down": "Nincs vonal"
+        },
+        "state_attributes": {
+          "flat": {
+            "name": "Lakás"
+          },
+          "since": {
+            "name": "Óta"
+          },
+          "name": {
+            "name": "Név"
+          }
+        }
+      }
+    },
+    "event": {
+      "event": {
+        "name": "Esemény",
+        "state_attributes": {
+          "event_type": {
+            "state": {
+              "ring": "Csöngetés",
+              "answered": "Felvették",
+              "canceled": "Csöngés közben bontották",
+              "unanswered": "Nem vették fel",
+              "talk_ended": "Beszélgetés vége",
+              "no_handset": "Nincs készülék",
+              "entry": "Belépés",
+              "entry_denied": "Belépés készülék nélkül",
+              "door": "Ajtónyitás",
+              "door_hung_up": "Ajtónyitás letevésként",
+              "audio": "Hívás hangja megőrizve",
+              "code_entry": "Belépés kóddal",
+              "code_wrong": "Rossz kód",
+              "card_entry": "Belépés proxival",
+              "card_unknown": "Ismeretlen proxi",
+              "service_code": "Szervizkód",
+              "eeprom_write": "Beállítás a központon",
+              "supply_lost": "A központ tápja kiesett",
+              "supply_back": "A központ tápja visszajött",
+              "line_fault": "Vonalhiba",
+              "logger_restart": "A naplózó újraindult",
+              "logger_ring": "A naplózó csöngetett"
+            }
+          }
+        }
+      }
+    },
+    "button": {
+      "pick_up": {
+        "name": "Felvétel"
+      },
+      "hang_up": {
+        "name": "Letevés"
+      },
+      "open_door": {
+        "name": "Ajtónyitás"
+      }
+    }
+  }
+}

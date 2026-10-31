@@ -1,0 +1,18 @@
+{
+  "domain": "codefon",
+  "name": "Codefon",
+  "codeowners": [
+    "@nonitex"
+  ],
+  "config_flow": true,
+  "dependencies": [],
+  "documentation": "https://github.com/nonitex/codefon-ha",
+  "integration_type": "device",
+  "iot_class": "local_push",
+  "issue_tracker": "https://github.com/nonitex/codefon-ha/issues",
+  "requirements": [],
+  "version": "0.1.0",
+  "zeroconf": [
+    "_codefon._tcp.local."
+  ]
+}
